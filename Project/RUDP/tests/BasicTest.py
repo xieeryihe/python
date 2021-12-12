@@ -92,6 +92,15 @@ class BasicTest(object):
 
         Precondition: file exists
         """
+
+        '''
+        # 重写文件，让文件末尾的结束符都为"\n"
+        temp_read_file = open(filename, "r")
+        temp_write_file = open(filename, "w", newline="\n")
+        lines = temp_read_file.readlines()
+        for line in lines:
+            temp_write_file.write(line)
+        '''
         f = open(filename, "rb")
         md5 = hashlib.md5()
         while True:

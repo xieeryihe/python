@@ -17,14 +17,14 @@ forwarder, so they will magically be run.
 
 
 def tests_to_run(forwarder):
-    # target_file = "a.txt"
-    target_file = "README"
+    target_file = "alice.txt"
+    # target_file = "README"
     from tests import BasicTest, RandomDropTest, RandomRepeatTest, RandomOrderTest
     # SackRandomDropTest
     BasicTest.BasicTest(forwarder, target_file)
     RandomDropTest.RandomDropTest(forwarder, target_file)
     RandomRepeatTest.RandomRepeatTest(forwarder, target_file)
-    RandomOrderTest.RandomOrderTest(forwarder, "README")
+    RandomOrderTest.RandomOrderTest(forwarder, target_file)
     # SackRandomDropTest.SackRandomDropTest(forwarder, "README")
 
 

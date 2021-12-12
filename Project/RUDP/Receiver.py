@@ -5,18 +5,19 @@ import time
 
 import Checksum
 
+
 class Connection():
-    def __init__(self,host,port,start_seq,debug=False):
+    def __init__(self, host, port, start_seq, debug=False):
         self.debug = debug
         self.updated = time.time()
-        self.current_seqno = start_seq - 1 # expect to ack from the start_seqno
+        self.current_seqno = start_seq - 1  # expect to ack from the start_seqno
         self.host = host
         self.port = port
         self.max_buf_size = 5
-        self.outfile = open("%s.%d" % (host,port),"w",newline="\n")
-        self.seqnums = {} # enforce single instance of each seqno
+        self.outfile = open("%s.%d" % (host, port), "w", newline="\n")
+        self.seqnums = {}  # enforce single instance of each seqno
 
-    def ack(self,seqno, data, sackMode = False):
+    def ack(self, seqno, data, sackMode=False):
         res_data = []
         sacks = []
         self.updated = time.time()
@@ -28,29 +29,29 @@ class Connection():
                     res_data.append(self.seqnums[n])
                     del self.seqnums[n]
                 else:
-                    break # when we find out of order seqno, quit and move on
+                    break  # when we find out of order seqno, quit and move on
 
         if self.debug:
-            print("Receiver.py:next seqno should be %d" % (self.current_seqno+1))
+            print("Receiver.py:next seqno should be %d" % (self.current_seqno + 1))
 
         # note: we return the /next/ sequence number we're expecting
         if sackMode:
             for n in sorted(self.seqnums.keys()):
                 sacks.append(n)
-            return "%s;%s" % (self.current_seqno+1, ','.join(map(str, sacks))), res_data
+            return "%s;%s" % (self.current_seqno + 1, ','.join(map(str, sacks))), res_data
         else:
-            return str(self.current_seqno+1), res_data
+            return str(self.current_seqno + 1), res_data
 
-
-    def record(self,data):
+    def record(self, data):
         self.outfile.write(data)
         self.outfile.flush()
 
     def end(self):
         self.outfile.close()
 
+
 class Receiver():
-    def __init__(self,listenport=33122,debug=False,timeout=10, sackMode=False):
+    def __init__(self, listenport=33122, debug=False, timeout=10, sackMode=False):
         self.debug = debug
         self.timeout = timeout
         self.sackMode = sackMode
@@ -60,13 +61,13 @@ class Receiver():
         self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.s.settimeout(timeout)
-        self.s.bind((self.host,self.port))
-        self.connections = {} # schema is {(address, port) : Connection}
+        self.s.bind((self.host, self.port))
+        self.connections = {}  # schema is {(address, port) : Connection}
         self.MESSAGE_HANDLER = {
-            'start' : self._handle_start,
-            'data' : self._handle_data,
-            'end' : self._handle_end,
-            'ack' : self._handle_ack
+            'start': self._handle_start,
+            'data': self._handle_data,
+            'end': self._handle_end,
+            'ack': self._handle_ack
         }
 
     def start(self):
@@ -82,7 +83,7 @@ class Receiver():
                 if debug:
                     print("Receiver.py: received %s|%d|%s|%s" % (msg_type, seqno, data[:5], checksum))
                 if Checksum.validate_checksum(message):
-                    self.MESSAGE_HANDLER.get(msg_type,self._handle_other)(seqno, data, address)
+                    self.MESSAGE_HANDLER.get(msg_type, self._handle_other)(seqno, data, address)
                 elif self.debug:
                     print("Receiver.py: checksum failed: %s|%d|%s|%s" % (msg_type, seqno, data[:5], checksum))
 
@@ -95,7 +96,7 @@ class Receiver():
             except ValueError as e:
                 if self.debug:
                     print("Receiver.py:" + str(e))
-                pass # ignore
+                pass  # ignore
 
     # waits until packet is received to return
     def receive(self):
@@ -120,11 +121,11 @@ class Receiver():
 
     def _handle_start(self, seqno, data, address):
         if not address in self.connections:
-            self.connections[address] = Connection(address[0],address[1],seqno,self.debug)
+            self.connections[address] = Connection(address[0], address[1], seqno, self.debug)
         conn = self.connections[address]
-        ackno, res_data = conn.ack(seqno,data,self.sackMode)
+        ackno, res_data = conn.ack(seqno, data, self.sackMode)
         for l in res_data:
-            #if self.debug:
+            # if self.debug:
             #    print data
             conn.record(l)
         self._send_ack(ackno, address)
@@ -133,9 +134,9 @@ class Receiver():
     def _handle_data(self, seqno, data, address):
         if address in self.connections:
             conn = self.connections[address]
-            ackno,res_data = conn.ack(seqno,data,self.sackMode)
+            ackno, res_data = conn.ack(seqno, data, self.sackMode)
             for l in res_data:
-                #if self.debug:
+                # if self.debug:
                 #    print l
                 conn.record(l)
             self._send_ack(ackno, address)
@@ -144,9 +145,9 @@ class Receiver():
     def _handle_end(self, seqno, data, address):
         if address in self.connections:
             conn = self.connections[address]
-            ackno, res_data = conn.ack(seqno,data,self.sackMode)
+            ackno, res_data = conn.ack(seqno, data, self.sackMode)
             for l in res_data:
-                #if self.debug:
+                # if self.debug:
                 #    print l
                 conn.record(l)
             self._send_ack(ackno, address)
@@ -161,9 +162,9 @@ class Receiver():
 
     def _split_message(self, message):
         pieces = message.split('|')
-        msg_type, seqno = pieces[0:2] # first two elements always treated as msg type and seqno
-        checksum = pieces[-1] # last is always treated as checksum
-        data = '|'.join(pieces[2:-1]) # everything in between is considered data
+        msg_type, seqno = pieces[0:2]  # first two elements always treated as msg type and seqno
+        checksum = pieces[-1]  # last is always treated as checksum
+        data = '|'.join(pieces[2:-1])  # everything in between is considered data
         return msg_type, seqno, data, checksum
 
     def _cleanup(self):
@@ -181,6 +182,7 @@ class Receiver():
         self.connections = new_connections
         self.last_cleanup = now
 
+
 if __name__ == "__main__":
     def usage():
         print("RUDP Receiver")
@@ -190,9 +192,10 @@ if __name__ == "__main__":
         print("-h | --help Print this usage message")
         print("-k | --sack Enable selective acknowledgement mode")
 
+
     try:
         opts, args = getopt.getopt(sys.argv[1:],
-                               "p:dt:k", ["port=", "debug=", "timeout=", "sack="])
+                                   "p:dt:k", ["port=", "debug=", "timeout=", "sack="])
     except:
         usage()
         exit()
@@ -202,7 +205,7 @@ if __name__ == "__main__":
     timeout = 10
     sackMode = False
 
-    for o,a in opts:
+    for o, a in opts:
         if o in ("-p", "--port="):
             port = int(a)
         elif o in ("-t", "--timeout="):
