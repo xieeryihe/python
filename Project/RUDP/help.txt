@@ -1,0 +1,1 @@
+接下来要重构sender，把list写到sender里面，方便
