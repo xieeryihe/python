@@ -134,6 +134,7 @@ class Forwarder(object):
             except Exception as e:
                 print("Test fail")
                 print('错误明细是', e.__class__.__name__, e)
+
             while flag:
                 try:
                     if self.start(input_file):

@@ -6,6 +6,21 @@ import BasicSender
 
 max_message_len = 1472
 
+"""
+实现原理是：每接收一个包，就标记为已收到，然后从头查看窗口，将从开始能pop的全pop掉
+比如发了1，2，3，4，收到了1，3，那么收到1消息时，就检查，发现1前面没有了，就pop一次，
+等价于从开始检查，发现1收到了，pop掉一个。
+如果发了1,2,3,4，收到了3，那么收到3消息时，就检查，发现1，2都没收到，那就不pop，
+从收到的3开始检查，往前走发现有没收到的，什么都不做。
+
+
+稍微需要注意的是超时处理，因为超时后要把所有的包都发一遍，不能在一次循环里同时pop，
+采用上述逻辑，只需要循环send，receive（标记逻辑写在receive里），最后不用handle_response，只需要pop_all即可。
+或者：handle_response逻辑只写标记的逻辑，pop_all另外调用。建议后者。
+
+注意：pop_all和handle_response分开写的主要目的是处理超时。因为超时要发送所有的包。
+"""
+
 
 class MyPacket:
     def __init__(self, seqno=-1, packet_string=""):
@@ -13,12 +28,11 @@ class MyPacket:
         self.packet_string = packet_string
         self.last_time = time.time()
         self.timeout = 0.5
+        self.received = False
 
     def packet_timeout(self):
         """返回是否超时，"""
         this_time = time.time()
-        # print("last time : %f" % self.last_time)
-        # print("this time : %f" % this_time)
         if this_time - self.last_time > self.timeout:
             self.last_time = this_time
             return True
@@ -36,9 +50,6 @@ class Sender(BasicSender.BasicSender):
         self.send_base = 0
         self.next_seq = 0
 
-        if sack_mode:
-            raise NotImplementedError  # remove this line when you implement SACK
-
     def if_timeout(self):
         """等待包的列表中是否有超时的包"""
         list_len = len(self.packet_list)
@@ -52,13 +63,25 @@ class Sender(BasicSender.BasicSender):
         """添加窗口中等待确认"""
         if self.next_seq - self.send_base < self.max_len:
             self.packet_list.append(packet)
+            # print("add seqno: %d" % packet.seqno)
             self.next_seq += 1
 
     def pop_packet(self, index=0):
         """pop掉列表的指定索引元素"""
         # print("list length:" + str(len(self.packet_list)))
         if index < len(self.packet_list):
+            # print("pop seqno: %d" % self.packet_list[0].seqno)
             self.packet_list.pop(index)
+            self.send_base += 1
+
+    def pop_all(self):
+        """pop掉列表中所有能pop的"""
+        while self.packet_list:
+            if self.packet_list[0].received:
+                self.pop_packet()
+            else:
+                # print("packet %d doesn't received" % self.packet_list[0].seqno)
+                break
 
     def print_list(self):
         for i in range(0, len(self.packet_list)):
@@ -67,13 +90,13 @@ class Sender(BasicSender.BasicSender):
     def send(self, packet, address=None):
         super(Sender, self).send(packet.packet_string)
         # print("send:" + packet.packet_string[0:15])
-        # self.add_packet(packet)
 
     def receive(self, timeout=None):
         """注意：timeout是浮点数，单位为秒"""
         response = super(Sender, self).receive(0.01)  # 接收包的超时设为0.01s
         if response:
             response = response.decode()
+            # print("response: " + response)
         return response
 
     def handle_timeout(self):
@@ -83,11 +106,12 @@ class Sender(BasicSender.BasicSender):
         for i in range(0, list_len):
             self.send(self.packet_list[i])
             response = self.receive()
-        self.handle_response(response)
+            self.handle_response(response)
+        self.pop_all()
 
     def handle_response(self, response):
         """
-        处理response，
+        处理response，只进行标记操作
         一个一般的response格式：ack|5|3870715478
         """
         if not response:
@@ -97,14 +121,11 @@ class Sender(BasicSender.BasicSender):
             msg, ack, reported_checksum = response.rsplit('|', 2)
             # print("ack: " + ack)
             ack = int(ack)
-            while self.packet_list:
-                # self.print_list()
-                if self.packet_list[0].seqno < ack:  # 一定是按seqno从小到大发包的
-                    # print("pop seqno %d" % self.packet_list[0].seqno)
-                    self.pop_packet()
-                    self.send_base += 1
-                else:  # 如果最小的seq >= ack，说明该ack之前的包都已经确认过了，简单丢弃
-                    break
+            for packet in self.packet_list:
+                #  if packet.seqno == ack - 1:  # 错误代码，下面一行是正确代码
+                if packet.seqno <= ack - 1:  # 注意！！！小于等于的都收到了，因为Received逻辑就是这样。这个真的debug好久
+                    packet.received = True
+
         else:
             print("recv: %s <--- CHECKSUM FAILED" % response)
 
@@ -112,6 +133,7 @@ class Sender(BasicSender.BasicSender):
     def start(self):
         msg = self.infile.read(max_message_len)
         msg_type = None
+        send_flag = True
         while not msg_type == 'end':
             if self.if_timeout():
                 self.handle_timeout()
@@ -126,16 +148,21 @@ class Sender(BasicSender.BasicSender):
 
             packet_string = self.make_packet(msg_type, self.next_seq, msg)
             packet = MyPacket(seqno=self.next_seq, packet_string=packet_string)
-            self.send(packet)
-            self.add_packet(packet)  # 只有新加入包的时候才需要add
-            # print("sent: %s" % packet_string[0:15])
-            response = self.receive()
-            self.handle_response(response)
-
+            while True:
+                if self.next_seq - self.send_base < self.max_len:
+                    self.send(packet)
+                    self.add_packet(packet)  # 只有新发送包成功的时候才需要add
+                    response = self.receive()
+                    self.handle_response(response)
+                    self.pop_all()  # 在主程序循环中，每次接收到response都要pop_all
+                    break  # 只有发包成功才能停止循环，
+                else:
+                    self.handle_timeout()  # 否则就当超时处理
             msg = next_msg
 
         # 如果一个文件的包都发完了，最后packet_list还有元素的话，那就说明剩下的全是超时没发完的，直接用超时处理程序即可
         while self.packet_list:
+            # print("in last session")
             self.handle_timeout()
         self.sock.close()
 
