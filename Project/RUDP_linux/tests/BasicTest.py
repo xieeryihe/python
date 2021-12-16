@@ -92,7 +92,7 @@ class BasicTest(object):
 
         Precondition: file exists
         """
-
+        
         f = open(filename, "rb")
         md5 = hashlib.md5()
         while True:
@@ -102,3 +102,4 @@ class BasicTest(object):
             md5.update(data)
         f.close()
         return md5.digest()
+

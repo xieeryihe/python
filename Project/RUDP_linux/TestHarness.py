@@ -17,8 +17,8 @@ forwarder, so they will magically be run.
 
 
 def tests_to_run(forwarder):
-    target_file = "alice.txt"
-    # target_file = "README"
+    # target_file = "alice.txt"
+    target_file = "README"
     from tests import BasicTest, RandomDropTest, RandomRepeatTest, RandomOrderTest
     from tests import SackRandomDropTest, SackRandomOrderTest, SackRandomRepeatTest
     BasicTest.BasicTest(forwarder, target_file)
@@ -129,20 +129,20 @@ class Forwarder(object):
             except (KeyboardInterrupt, SystemExit):
                 exit()
 
-            except ConnectionResetError as e:
-                print("unstoppable error: ", e.__class__.__name__, e)
-                print("try again... ")
-                flag = True
+            # except ConnectionResetError as e:
+            #     print("unstoppable error: ", e.__class__.__name__, e)
+            #     print("try again... ")
+            #     flag = True
             except Exception as e:
                 print("Test fail")
                 print('detail:', e.__class__.__name__, e)
 
-            while flag:
-                try:
-                    if self.start(input_file):
-                        flag = False
-                except ConnectionResetError:
-                    pass
+            # while flag:
+            #     try:
+            #         if self.start(input_file):
+            #             flag = False
+            #     except ConnectionResetError:
+            #         pass
             time.sleep(1)
 
     def handle_receive(self, message, address, sackMode=False):
@@ -363,3 +363,4 @@ if __name__ == "__main__":
     f = Forwarder(sender, receiver, port, debug)
     tests_to_run(f)
     f.execute_tests()
+
