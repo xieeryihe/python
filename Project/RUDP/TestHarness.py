@@ -20,13 +20,14 @@ def tests_to_run(forwarder):
     target_file = "alice.txt"
     # target_file = "README"
     from tests import BasicTest, RandomDropTest, RandomRepeatTest, RandomOrderTest
-    # SackRandomDropTest
-    BasicTest.BasicTest(forwarder, target_file)
-    RandomDropTest.RandomDropTest(forwarder, target_file)
-    RandomRepeatTest.RandomRepeatTest(forwarder, target_file)
-    RandomOrderTest.RandomOrderTest(forwarder, target_file)
-    # SackRandomDropTest.SackRandomDropTest(forwarder, "README")
-
+    from tests import SackRandomDropTest, SackRandomOrderTest, SackRandomRepeatTest
+    # BasicTest.BasicTest(forwarder, target_file)
+    # RandomDropTest.RandomDropTest(forwarder, target_file)
+    # RandomRepeatTest.RandomRepeatTest(forwarder, target_file)
+    # RandomOrderTest.RandomOrderTest(forwarder, target_file)
+    # SackRandomDropTest.SackRandomDropTest(forwarder, target_file)
+    SackRandomOrderTest.SackRandomOrderTest(forwarder, target_file)
+    SackRandomRepeatTest.SackRandomRepeatTest(forwarder, target_file)
 
 """
 Testing is divided into two pieces: this forwarder and a set of test cases in
@@ -128,12 +129,12 @@ class Forwarder(object):
             except (KeyboardInterrupt, SystemExit):
                 exit()
             except ConnectionResetError as e:
-                print("不可抗力错误: ", e.__class__.__name__, e)
-                print("将重新尝试... ")
+                print("unstoppable error: ", e.__class__.__name__, e)
+                print("try again... ")
                 flag = True
             except Exception as e:
                 print("Test fail")
-                print('错误明细是', e.__class__.__name__, e)
+                print('detail:', e.__class__.__name__, e)
 
             while flag:
                 try:

@@ -49,6 +49,7 @@ class Sender(BasicSender.BasicSender):
         self.max_len = 5
         self.send_base = 0
         self.next_seq = 0
+        self.sack_mode = sack_mode
 
     def if_timeout(self):
         """等待包的列表中是否有超时的包"""
@@ -103,28 +104,56 @@ class Sender(BasicSender.BasicSender):
         # print("handle timeout")
         list_len = len(self.packet_list)
         response = None
-        for i in range(0, list_len):
-            self.send(self.packet_list[i])
-            response = self.receive()
+        if self.sack_mode:
+            for i in range(0, list_len):
+                self.send(self.packet_list[i])
+                response = self.receive()
+                self.handle_response(response)
+            self.pop_all()
+        else:
+            for i in range(0, list_len):
+                self.send(self.packet_list[i])
+                response = self.receive()
             self.handle_response(response)
-        self.pop_all()
 
     def handle_response(self, response):
         """
         处理response，只进行标记操作
-        一个一般的response格式：ack|5|3870715478
+        一个一般的非选择重传的response格式：ack|5|3870715478
+        选择重传格式：sack|1;3,4|<checksum>
         """
         if not response:
             return False
         if Checksum.validate_checksum(response):
             # print("recv: %s" % response)
-            msg, ack, reported_checksum = response.rsplit('|', 2)
-            # print("ack: " + ack)
-            ack = int(ack)
-            for packet in self.packet_list:
-                #  if packet.seqno == ack - 1:  # 错误代码，下面一行是正确代码
-                if packet.seqno <= ack - 1:  # 注意！！！小于等于的都收到了，因为Received逻辑就是这样。这个真的debug好久
-                    packet.received = True
+            # self.print_list()
+            if self.sack_mode:
+                msg, ack_string, reported_checksum = response.rsplit('|', 2)
+                ack, sack_string = ack_string.rsplit(';',1)
+
+                if sack_string:
+                    sack_list = sack_string.split(',')
+                else:
+                    sack_list = []
+                for packet in self.packet_list:
+                    if packet.seqno < int(ack):
+                        packet.received = True
+                    if sack_list:
+                        for sack in sack_list:
+                            if packet.seqno == int(sack):
+                                packet.received = True
+            else:
+                # print("recv: %s" % response)
+                msg, ack, reported_checksum = response.rsplit('|', 2)
+                # print("ack: " + ack)
+                ack = int(ack)
+                while self.packet_list: # 正常情况下，只用pop一次就行了，但是为了方便timeout处理，就写成了while的逻辑，且pop的条件是<而不是==
+                    # self.print_list()
+                    if self.packet_list[0].seqno < ack:  # 一定是按seqno从小到大发包的
+                        # print("pop seqno %d" % self.packet_list[0].seqno)
+                        self.pop_packet()
+                    else:  # 如果最小的seq >= ack，说明该ack之前的包都已经确认过了，简单丢弃
+                        break
 
         else:
             print("recv: %s <--- CHECKSUM FAILED" % response)
@@ -133,7 +162,6 @@ class Sender(BasicSender.BasicSender):
     def start(self):
         msg = self.infile.read(max_message_len)
         msg_type = None
-        send_flag = True
         while not msg_type == 'end':
             if self.if_timeout():
                 self.handle_timeout()
@@ -154,7 +182,7 @@ class Sender(BasicSender.BasicSender):
                     self.add_packet(packet)  # 只有新发送包成功的时候才需要add
                     response = self.receive()
                     self.handle_response(response)
-                    self.pop_all()  # 在主程序循环中，每次接收到response都要pop_all
+                    self.pop_all()  # 在主程序循环中，每次接收到response都要pop_all，非sack_mode全是false，不用管
                     break  # 只有发包成功才能停止循环，
                 else:
                     self.handle_timeout()  # 否则就当超时处理
@@ -164,6 +192,7 @@ class Sender(BasicSender.BasicSender):
         while self.packet_list:
             # print("in last session")
             self.handle_timeout()
+        self.infile.close()
         self.sock.close()
 
     def test(self):
